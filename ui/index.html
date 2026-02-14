@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DOS2 Live Party Dashboard</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdf7;
+      --text: #1f1b16;
+      --muted: #6a6257;
+      --line: #d9cfbf;
+      --accent: #8b2f2f;
+      --accent-2: #c1832c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 0%, #fff7dc 0%, transparent 50%),
+        radial-gradient(circle at 100% 100%, #f2dbc0 0%, transparent 40%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.6rem;
+      letter-spacing: 0.02em;
+    }
+
+    .meta {
+      color: var(--muted);
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(73, 38, 12, 0.08);
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .char-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stats, .vitals {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin: 8px 0;
+      font-size: 0.92rem;
+    }
+
+    .pill {
+      background: #f8f2e6;
+      border: 1px solid #ecdfca;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 0.82rem;
+      display: inline-block;
+      margin: 2px 4px 0 0;
+    }
+
+    details {
+      margin-top: 8px;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--accent-2);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 3px 0;
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Divinity: Original Sin 2 Party Status</h1>
+  <div class="meta" id="meta">Waiting for data...</div>
+  <div class="cards" id="cards"></div>
+
+  <script>
+    const metaEl = document.getElementById("meta");
+    const cardsEl = document.getElementById("cards");
+
+    function fmtTime(v) {
+      if (!v) return "n/a";
+      const d = typeof v === "number" ? new Date(v * 1000) : new Date(v);
+      return isNaN(d.getTime()) ? "n/a" : d.toLocaleTimeString();
+    }
+
+    function renderCharacter(char) {
+      const attrs = char.attributes || {};
+      const vitals = char.vitals || {};
+      const statuses = char.status_effects || [];
+      const equipment = char.equipment || [];
+      const inventory = char.inventory || [];
+
+      const statsHtml = Object.entries(attrs)
+        .map(([k, v]) => `<div><strong>${k}</strong>: ${v ?? "-"}</div>`)
+        .join("");
+
+      const vitalsHtml = [
+        ["HP", `${vitals.current_hp ?? "-"} / ${vitals.max_hp ?? "-"}`],
+        ["Phys Armor", vitals.physical_armor ?? "-"],
+        ["Mag Armor", vitals.magical_armor ?? "-"],
+        ["AP", vitals.action_points ?? "-"]
+      ].map(([k, v]) => `<div><strong>${k}</strong>: ${v}</div>`).join("");
+
+      const statusHtml = statuses.length
+        ? statuses.map(s => `<span class="pill">${s.name || s.id}</span>`).join("")
+        : `<span class="pill">None</span>`;
+
+      const equipHtml = equipment.length
+        ? equipment.map(e => `<li>${e.slot}: ${e.name || e.stats_id || e.guid}</li>`).join("")
+        : "<li>No equipped items found.</li>";
+
+      const invHtml = inventory.length
+        ? inventory.map(i => `<li>${i.template} x${i.count}</li>`).join("")
+        : "<li>Inventory empty.</li>";
+
+      return `
+        <article class="card">
+          <div class="row">
+            <div class="char-name">${char.name || char.guid}</div>
+            <small>${char.guid || ""}</small>
+          </div>
+
+          <div class="vitals">${vitalsHtml}</div>
+          <div class="stats">${statsHtml}</div>
+
+          <div><strong>Status:</strong> ${statusHtml}</div>
+
+          <details>
+            <summary>Equipment (${equipment.length})</summary>
+            <ul>${equipHtml}</ul>
+          </details>
+
+          <details>
+            <summary>Inventory (${inventory.length} template stacks)</summary>
+            <ul>${invHtml}</ul>
+          </details>
+        </article>
+      `;
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("http://localhost:3000/status");
+        const data = await res.json();
+        const party = data.party || [];
+
+        metaEl.textContent =
+          `Party: ${party.length} | Updated (game): ${fmtTime(data.updated_at)} | Received (server): ${fmtTime(data.server_received_at)}`;
+
+        if (!party.length) {
+          cardsEl.innerHTML = "<p>No party data yet. Start the game and load a session.</p>";
+          return;
+        }
+
+        cardsEl.innerHTML = party.map(renderCharacter).join("");
+      } catch (err) {
+        metaEl.textContent = "Server unavailable at http://localhost:3000/status";
+        cardsEl.innerHTML = "<p>Waiting for backend...</p>";
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
